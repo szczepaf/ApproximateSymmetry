@@ -3,7 +3,6 @@
 # pylint: disable=C0103 # UPPER case
 
 
-from importlib.metadata import packages_distributions
 import math
 import random, numpy as np
 from typing_extensions import override
@@ -20,14 +19,19 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 10):
+    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.1, iterations=2):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
-        self.division_constant = division_constant
         self.probability_constant = probability_constant
+        self.iterations = iterations
         if B is not None:
             self.B = B
+            
+        # initialize a set of visited permutations
+        self.visited = set()
+        self.rejected = 0
+        
         self.iNeighbor, self.dNeighbor = [], [set() for _ in range(self.N)]
         for i in range(self.N):
             neigh = set()
@@ -38,7 +42,7 @@ class SymmetryAproximator(Annealer):
                     
 
         # compute the similarity matrix. If two vertices have similar degree, they will have a higher value in this matrix
-        self.similarity_matrix = self.compute_similarity_matrix(self.A, division_constant=self.division_constant)
+        self.wl_vertex_set = self.compute_vertex_sets_wl(self.A)
         
         
         for i, s in enumerate(state):
@@ -105,6 +109,9 @@ class SymmetryAproximator(Annealer):
                 E += dE
             trials += 1
             
+            
+            
+
             # Work with the new definition of Symmetry taking into account the number of fixed points. 
             E = E * (self.N * (self.N - 1) - self.lfp * (self.lfp - 1)) / (self.N * (self.N - 1) - self.fp * (self.fp - 1))
             
@@ -139,23 +146,24 @@ class SymmetryAproximator(Annealer):
         # Return best state and energy
         return self.best_state, self.best_energy
     
-    def compute_similarity_matrix(self, A, division_constant):
-        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on the degree distribution of the graph
-        In practice, the output can be any similarity matrix here."""
-        
-        # sum over columns of the adjacency matrix - get the degree distribution
-        degree_distribution = sum(A,0)
-        
-        # compute a matrix where position (i,j) is the absolute difference between the degree of node i and node j
-        dist_nodes_matrix = np.abs(degree_distribution - degree_distribution.reshape(-1,1))
-        
-        # compute the inverse of the distance matrix - create a form of similariy measure.
-        # Add a constant to avoid division by zero. The higher the constant, the more even the choices will be
-        dist_nodes_matrix_inv = 1./(division_constant + dist_nodes_matrix)
-        
 
-        return dist_nodes_matrix_inv
+    def compute_vertex_sets_wl(self, A):
+        """Input: A - adjacency matrix of a graph. Output: a set of sets, where each vertex has the set of vertices with the same WL hash."""
         
+        G = nx.from_numpy_array(A)
+        wl = nx.weisfeiler_lehman_subgraph_hashes(G, iterations=self.iterations)
+        
+        # array of sets. Each vertex has a set of vertices with the same WL hash
+        vertex_sets = [set() for _ in range(len(A))] 
+        for i in range(len(A)):
+            for j in range(len(A)):
+                # if vertices have the same WL hash and are not the same vertex, add them to the set
+                if wl[i] == wl[j] and i != j:
+                    vertex_sets[i].add(j)
+                    
+        return vertex_sets
+        
+                
 
     # compute 1/4 ||A - pAp^T|| for given p, A
     def energy(self):
@@ -166,6 +174,7 @@ class SymmetryAproximator(Annealer):
             v = self.state[r]
             for c in range(m):
                 diff += abs(B[v,c] - self.A[r,c])
+                
         return diff/ 4
     
 
@@ -218,45 +227,35 @@ class SymmetryAproximator(Annealer):
         self.fp = temp
         return True
   
-            
         
 
     def move(self):
-        a = random.randint(0, len(self.state) - 1) #random choice works significantly better then a choice based on how "bad" the vertex and its image are
-        
-        
-        # choose the vertex to swap images with:
-
-
-        # list of energy differences for each possible swap. Start with zeros
-        energy_diffs = np.zeros(len(self.state))
-        image_a = self.state[a] 
-        
-        sim_a = self.similarity_matrix.item(a,image_a) # similarity of a -> image of a
-        
-        for b in range(len(self.state)):
-            image_b = self.state[b]
-
-            # if the swap would create a fixed point, let the energy difference be 0 (it will be normalized later)
-            if (not (a == image_b or b == image_a or a == b)):
-                sim_b = self.similarity_matrix.item(b,image_b) # similarity of b -> image of b
+        a = random.randint(0, len(self.state) - 1)
+        # look at the vertices with the same WL hash
+        similar_wl_vertices = self.wl_vertex_set[a]
+        if (self.state[a] in similar_wl_vertices):
+            return None, a, a
             
-                sim_a_new = self.similarity_matrix.item(a,image_b) # similarity of a -> image of b
-                sim_b_new = self.similarity_matrix.item(b,image_a) # similarity of b -> image of a
-           
-            
-                # Calculate energy difference. We want this value to be as large as possible
-                energy_diff = sim_a_new + sim_b_new - sim_a - sim_b
-                energy_diffs[b] = energy_diff
+        
+        if len(similar_wl_vertices) == 0:
+            # choose a random vertex
+            b = random.randint(0, len(self.state) - 1)
+        else:
+            # choose a random vertex from the similar WL hash vertices - but only with probability equal to self.probability_constant
+            if random.random() < self.probability_constant:
+                b = random.choice(list(similar_wl_vertices))
                 
-        # choose the second vertex b that will swap images with a using the energy differences as a probability distribution.
-        # probability constant is used to avoid division by zero. Also, the higher it is, the more even the choices will be
-        energy_diffs = [max(self.probability_constant, energy_diff) for energy_diff in energy_diffs]
-        # Normalize to create a probability distribution
-        energy_diffs_probs = np.array(energy_diffs) / sum(energy_diffs)
+            else: # random choice
+                b = random.randint(0, len(self.state) - 1)
         
-        # Choose b based on energy differences as probability distribution
-        b = np.random.choice(range(len(self.state)), p = energy_diffs_probs)
+        # check whether the new permutation that would emerge by swapping a and b is already visited
+        new_state = self.copy_state(self.state)
+        new_state[a], new_state[b] = new_state[b], new_state[a]
+        if tuple(new_state) in self.visited:
+            self.rejected += 1
+            return 0, a, b
+        
+        self.visited.add(tuple(new_state))
             
         if self.check_fp(a,b):
             ida, idb = self.state[a], self.state[b]
@@ -282,7 +281,7 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=10, probability_constant=0.01):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), probability_constant=0.9, iterations=2):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -290,7 +289,7 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), divisi
         while check(perm):
             perm = np.random.permutation(N)
             
-        SA = SymmetryAproximator(list(perm), a, b, fp, division_constant=division_constant, probability_constant=probability_constant)
+        SA = SymmetryAproximator(list(perm), a, b, fp, probability_constant=probability_constant,iterations=iterations)
         SA.Tmax = temp
         SA.Tmin = 0.01
         SA.steps = steps
@@ -303,14 +302,8 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), divisi
         if best_energy == None or e < best_energy:
             best_state, best_energy = state, e
             
+    print("rejections: ", SA.rejected)
     return best_state, best_energy 
 
 
 
-
-def count_fp(perm):
-    count = 0
-    for i, v in enumerate(perm):
-        if i == v:
-            count += 1
-    return count

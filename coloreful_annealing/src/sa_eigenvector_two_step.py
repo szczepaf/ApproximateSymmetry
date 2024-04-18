@@ -19,7 +19,7 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp, probability_constant = 0.1, division_constant = 0.1):
+    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 1):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
@@ -288,7 +288,7 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.1, probability_constant=0.1):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=1, probability_constant=0.01):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -301,13 +301,11 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.
         SA.Tmin = 0.01
         SA.steps = steps
         SA.copy_strategy = 'slice'
-        state, e = SA.anneal()
+        state, _ = SA.anneal()
         
         fps_in_best_state = count_fp(state)
-
         
-        e = 4 * e / (( N * ( N - 1 )) -  fps_in_best_state * (fps_in_best_state - 1))
-
+        e = 4 * SA.energy() / (( N * ( N - 1 )) - (fps_in_best_state * (fps_in_best_state - 1)))
         if best_energy == None or e < best_energy:
             best_state, best_energy = state, e
             

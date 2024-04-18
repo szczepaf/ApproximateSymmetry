@@ -40,7 +40,7 @@ def cohens_d(group1, group2):
     return d
 
 def main():
-    df_grid = pd.read_csv('comparison_of_original_and_eigenvector_twostep_grid.csv')
+    df_grid = pd.read_csv('comparisons/comparison_of_original_and_eigenvector_twostep_grid.csv')
     vertex_counts = [50, 100, 150]
 
     for vertex_count in vertex_counts:

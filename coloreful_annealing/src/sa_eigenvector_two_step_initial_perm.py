@@ -20,7 +20,7 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp, probability_constant = 0.1, division_constant = 0.1):
+    def __init__(self, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 1, state=None):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
@@ -41,7 +41,10 @@ class SymmetryAproximator(Annealer):
         self.similarity_matrix = self.compute_similarity_matrix(self.A, division_constant=self.division_constant)
         
         if (state is None):
-            state = self.generate_initial_permutation()
+            self.state = list(self.generate_initial_permutation())
+        else:
+            self.state = list(state)
+         
         
         for i, s in enumerate(state):
             neigh = []
@@ -318,25 +321,25 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.1, probability_constant=0.1):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=1, probability_constant=0.01, state=None):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
             
-        SA = SymmetryAproximator(None, a, b, fp, division_constant=division_constant, probability_constant=probability_constant)
+        SA = SymmetryAproximator(a, b, fp, division_constant=division_constant, probability_constant=probability_constant, state=state)
         SA.Tmax = temp
         SA.Tmin = 0.01
         SA.steps = steps
         SA.copy_strategy = 'slice'
-        state, e = SA.anneal()
+        final_state, e = SA.anneal()
         
-        fps_in_best_state = count_fp(state)
+        fps_in_best_state = count_fp(final_state)
 
         
         e = 4 * e / ( N * ( N - 1 ))
 
         if best_energy == None or e < best_energy:
-            best_state, best_energy = state, e
+            best_state, best_energy = final_state, e
             
     return best_state, best_energy 
 

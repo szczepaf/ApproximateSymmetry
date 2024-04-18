@@ -129,7 +129,7 @@ def check(perm):
             return True
     return False
 
-def annealing(a, b=None, temp=1, steps=20000, runs=1, fp=0):
+def annealing(a, b=None, temp=1, temp_min = 0.01, steps=20000, runs=1, fp=0):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -139,7 +139,7 @@ def annealing(a, b=None, temp=1, steps=20000, runs=1, fp=0):
             perm = np.random.permutation(N)
         SA = SymmetryAproximator(list(perm), a, b, fp)
         SA.Tmax = temp
-        SA.Tmin = 0.01
+        SA.Tmin = temp_min  
         SA.steps = steps
         SA.copy_strategy = 'slice'
         state, e = SA.anneal()

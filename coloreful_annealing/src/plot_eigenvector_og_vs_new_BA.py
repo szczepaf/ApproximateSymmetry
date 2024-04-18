@@ -10,7 +10,7 @@ def prepare_plot_data(df, vertex_count):
     
     filtered_df = df[df['vertex_count'] == vertex_count]
     k_values = [3, 5, 7] 
-    algorithms = ['eigenvector', 'half']
+    algorithms = ['zero', 'new', 'half']
     
     for k in k_values:
         for algorithm in algorithms:
@@ -40,7 +40,7 @@ def cohens_d(group1, group2):
     return d
 
 def main():
-    df_BA = pd.read_csv('comparisons/comparison_of_original_and_eigenvector_twostep_BA.csv')
+    df_BA = pd.read_csv('comparisons/comparison_of_eigenvector_twostep_in_new_and_original_definition_BA.csv')
     vertex_counts = [50, 100, 150]
 
     for vertex_count in vertex_counts:
@@ -49,7 +49,7 @@ def main():
         
     # Calculate p-values and Cohen's D for Zero SA vs. New SA and New SA vs. Half SA
     k_values = [3, 5, 7]
-    comparisons = [('half', 'eigenvector')]
+    comparisons = [('zero', 'new'), ('half', 'new')]
     for comparison in comparisons:
         p_values_df = pd.DataFrame(index=vertex_counts, columns=[f'{k}' for k in k_values])
         cohens_d_df = pd.DataFrame(index=vertex_counts, columns=[f'{k}' for k in k_values])

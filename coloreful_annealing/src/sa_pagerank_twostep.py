@@ -20,12 +20,13 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp, probability_constant = 0.1, division_constant = 0.1):
+    def __init__(self, state, A, B, mfp = float(math.inf), probability_constant = 0.01, division_constant = 0.2, alpha = 0.85):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
         self.division_constant = division_constant
         self.probability_constant = probability_constant
+        self.alpha = alpha
         if B is not None:
             self.B = B
         self.iNeighbor, self.dNeighbor = [], [set() for _ in range(self.N)]
@@ -147,7 +148,7 @@ class SymmetryAproximator(Annealer):
         # create the graph from the adjacency matrix
         G = nx.from_numpy_array(A)
         #compute the pagerank
-        pagerank = nx.pagerank(G, max_iter=1000)
+        pagerank = nx.pagerank(G, max_iter=1000,alpha=self.alpha)
         # Initialize the difference matrix with zeros
         n = len(pagerank)
         diff_matrix = np.zeros((n, n))
@@ -288,7 +289,7 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.1, probability_constant=0.1):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=0.2, probability_constant=0.01, alpha=0.85):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -298,7 +299,7 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.
             
 
         # It has to be list(perm), not just perm! To actually make a copy that will be modified by the algorithm
-        SA = SymmetryAproximator(list(perm), a, b, fp, division_constant=division_constant, probability_constant=probability_constant)
+        SA = SymmetryAproximator(list(perm), a, b, fp, division_constant=division_constant, probability_constant=probability_constant,alpha=alpha)
         SA.Tmax = temp
         SA.Tmin = 0.01
         SA.steps = steps
@@ -306,13 +307,12 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=0, division_constant=0.
         state, _ = SA.anneal()
         
         fps_in_best_state = count_fp(state)
-
         
-        e = 4 * SA.energy() / (( N * ( N - 1 )) - fps_in_best_state * (fps_in_best_state - 1))
-
+        e = 4 * SA.energy() / (( N * ( N - 1 )) - (fps_in_best_state * (fps_in_best_state - 1)))
         if best_energy == None or e < best_energy:
             best_state, best_energy = state, e
             
+
     return best_state, best_energy 
 
 

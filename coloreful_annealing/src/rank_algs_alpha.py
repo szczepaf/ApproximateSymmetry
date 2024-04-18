@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Assuming 'data' is your DataFrame loaded from 'analyzed_results.csv'
-data = pd.read_csv('analyzed_grid_search_results/clustering_twostep.csv')
+data = pd.read_csv('analyzed_grid_search_results/alphas.csv')
 
 # Define the categories
 categories = [
@@ -19,7 +19,7 @@ for graph_type, vertex_count in categories:
     category_df = data[(data['graph_type'] == graph_type) & (data['vertex_count'] == vertex_count)]
     category_df = category_df.sort_values(by='average_energy', ascending=True)
     for rank, row in enumerate(category_df.itertuples(), 1):
-        params = (row.division_constant, row.probability_constant)
+        params = (row.alpha)
         # Update scores
         if params in scores:
             scores[params] += rank
@@ -41,4 +41,4 @@ best_params_df = pd.DataFrame(sorted_scores_and_energies, columns=['Parameters',
 # Optionally, you can print or save this DataFrame to a CSV for review
 print(best_params_df)
 # save the df to a csv file "ranked_params_{alg_type}.csv"
-best_params_df.to_csv(f"analyzed_grid_search_results/ranked_params_clustering_twostep.csv", index=False)
+best_params_df.to_csv(f"analyzed_grid_search_results/ranked_alphas.csv", index=False)

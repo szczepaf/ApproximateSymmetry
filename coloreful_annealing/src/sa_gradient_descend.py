@@ -50,6 +50,20 @@ class SymmetryAproximator(Annealer):
         energy = diff / 4
 
         return energy
+    
+
+    def energy_for_candidate_perm(self, perm):
+        n, m = self.A.shape[0], self.A.shape[1]
+        B = self.B[:, perm]
+        diff = 0
+        for r in range(n):
+            v = perm[r]
+            for c in range(m):
+                diff += abs(B[v,c] - self.A[r,c])
+                
+        energy = diff / 4
+
+        return energy
 
     
 
@@ -104,24 +118,46 @@ class SymmetryAproximator(Annealer):
         
 
     def move(self):
-        a = random.randint(0, len(self.state) - 1)
-        b = random.randint(0, len(self.state) - 1)
-        
-        if self.check_fp(a,b):
-            # compute initial energy
+        startPerm = np.copy(self.state)
+        nNodes = len(self.state)
+        nNodesHalf =  np.round(nNodes / 2).astype(int)
+        energy_before_swap = self.energy() 
+        perm = np.random.permutation(nNodes)
+        curS = np.zeros(nNodesHalf)
+
+        for i in range(nNodesHalf):
+            a, b = perm[i], perm[nNodes - i - 1]
+            # Swap trial without modifying the original state
+            newPerm = np.copy(startPerm)
+            newPerm[a], newPerm[b] = startPerm[b], startPerm[a]
+
+            energy_after_swap = self.energy_for_candidate_perm(newPerm)
+            curS[i] = energy_after_swap - energy_before_swap
+            
+            
+
+       
+        # Find the best swap that minimizes the difference
+        bestIndex = np.argmin(curS)
+        a, b = perm[bestIndex], perm[nNodes - bestIndex - 1]
+    
+        if self.check_fp(a, b):
+            # Compute initial energy difference for the selected swap
             ida, idb = self.state[a], self.state[b]
             aN, bN = self.dNeighbor[ida], self.dNeighbor[idb]
-            initial = self.diff(ida, aN, idb, bN) 
-            self.rewire(a,b,False)
-            # update permutation
+            initial = self.diff(ida, aN, idb, bN)
+            self.rewire(a, b, False)
+            # Update permutation for the selected swap
             self.state[a], self.state[b] = self.state[b], self.state[a]
+            # Recompute neighbors after the swap
             aN, bN = self.dNeighbor[ida], self.dNeighbor[idb]
             after = self.diff(ida, aN, idb, bN)
 
-            return (after-initial)/2, a, b
-        
+            return (after - initial) / 2, a, b
 
         return 0, a, b
+
+
     
 
     @override

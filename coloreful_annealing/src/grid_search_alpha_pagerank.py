@@ -1,5 +1,5 @@
 import networkx as nx
-import sa_degree_twostep as sa_improved # import the given algorithm that we want to test
+import sa_pagerank_twostep as sa_improved # import the given algorithm that we want to test
 import datetime
 import csv
 import ast
@@ -57,14 +57,14 @@ def get_stochastic_block_model_graphs(simulation_count = 30, sizes = [60, 120], 
                 graphs.append((graph, block_count, "SBM"))
     return graphs
 
-def run_simulation_on_parameters(graph_tuples, steps, division_constant, probability_constant, filename, alg_type):
+def run_simulation_on_parameters(graph_tuples, steps, alpha, filename, alg_type):
     for graph_tuple in graph_tuples:
         print("Processing graph: ", graph_tuples.index(graph_tuple) + 1, " out of ", len(graph_tuples), " (in current epoch)." )
         graph = graph_tuple[0]
         parameter = graph_tuple[1]
         graph_type = graph_tuple[2]
         
-        perm, S = sa_improved.annealing(nx.to_numpy_array(graph), steps=steps, probability_constant=probability_constant, division_constant=division_constant)
+        perm, S = sa_improved.annealing(nx.to_numpy_array(graph), steps=steps, probability_constant=0.01, division_constant=0.2, alpha=alpha)
 
         vertex_count = graph.number_of_nodes()
         
@@ -74,7 +74,7 @@ def run_simulation_on_parameters(graph_tuples, steps, division_constant, probabi
                 fp += 1
                 
         
-        row = [alg_type, graph_type, vertex_count, parameter, steps, division_constant, probability_constant, S, fp]
+        row = [alg_type, graph_type, vertex_count, parameter, steps, alpha, S, fp]
         
         with open(filename, mode='a', newline='') as file:
             writer = csv.writer(file)
@@ -99,30 +99,26 @@ def load_graphs_from_csv(filename):
 
 def main():
     date = datetime.datetime.now().strftime("%Y-%m-%d-%H")
-    algorithm_type = "degree_twostep"
+    algorithm_type = "page_twostep"
     steps = 20000
     
-    division_constants = [0.01, 0.1, 0.2, 1, 10]
-    probability_constants = [0.001, 0.01, 0.2, 0.1, 1]
-
-    
+    alphas = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1]
 
     graph_tuples = load_graphs_from_csv("graphs_for_grid_search/graphs_for_grid_search_26_03.csv")   # These are the used graphs  
-    file_name = f"grid_search_results/symmetry_results_{date}_{algorithm_type}.csv"
+    file_name = f"grid_search_results/symmetry_results_alpha_{date}_{algorithm_type}.csv"
     
     #write header row
     with open(file_name, "w") as f:
-        f.write("alg_type,graph_type,vertex_count,parameter,steps,division_constant,probability_constant,energy,fps\n")
+        f.write("alg_type,graph_type,vertex_count,parameter,steps,alpha,energy,fps\n")
      
 
     
-    i, total_epochs = 0, len(division_constants) * len(probability_constants)
+    i, total_epochs = 0, len(alphas)
 
-    for division_constant in division_constants:
-        for probability_constant in probability_constants:
-            print("Epoch: ", i + 1, " out of ", total_epochs)
-            i += 1
-            run_simulation_on_parameters(graph_tuples, steps, division_constant, probability_constant, file_name, algorithm_type)
+    for a in alphas:
+        print("Epoch: ", i + 1, " out of ", total_epochs)
+        i += 1
+        run_simulation_on_parameters(graph_tuples, steps, a, file_name, algorithm_type)
     
     print("Finished.")   
 

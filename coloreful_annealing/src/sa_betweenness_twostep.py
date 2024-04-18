@@ -9,7 +9,7 @@ import random, numpy as np
 from typing_extensions import override
 import time
 import networkx as nx
-from annealer import Annealer
+from annealer import Annealer 
 
 
 def count_fp(perm):
@@ -20,7 +20,7 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 10):
+    def __init__(self, state, A, B, mfp = float(math.inf), probability_constant = 0.2, division_constant = 0.1):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
@@ -139,22 +139,28 @@ class SymmetryAproximator(Annealer):
         # Return best state and energy
         return self.best_state, self.best_energy
     
+
     def compute_similarity_matrix(self, A, division_constant):
-        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on the degree distribution of the graph
+        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on betweenness centrality of the graph
         In practice, the output can be any similarity matrix here."""
         
-        # sum over columns of the adjacency matrix - get the degree distribution
-        degree_distribution = sum(A,0)
-        
-        # compute a matrix where position (i,j) is the absolute difference between the degree of node i and node j
-        dist_nodes_matrix = np.abs(degree_distribution - degree_distribution.reshape(-1,1))
+        # create the graph from the adjacency matrix
+        G = nx.from_numpy_array(A)
+        #compute the centrality
+        betweenness_centrality = nx.betweenness_centrality(G)
+        # Initialize the difference matrix with zeros
+        n = len(betweenness_centrality)
+        diff_matrix = np.zeros((n, n))
+        # Fill the difference matrix with absolute differences of centralities
+        for i in range(n):
+            for j in range(n):
+                diff_matrix[i, j] = abs(betweenness_centrality[i] - betweenness_centrality[j])
         
         # compute the inverse of the distance matrix - create a form of similariy measure.
         # Add a constant to avoid division by zero. The higher the constant, the more even the choices will be
-        dist_nodes_matrix_inv = 1./(division_constant + dist_nodes_matrix)
+        similarity_matrix = 1./(division_constant + diff_matrix)
         
-
-        return dist_nodes_matrix_inv
+        return similarity_matrix
         
 
     # compute 1/4 ||A - pAp^T|| for given p, A
@@ -282,7 +288,7 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=10, probability_constant=0.01):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=0.1, probability_constant=0.2):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -290,6 +296,8 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), divisi
         while check(perm):
             perm = np.random.permutation(N)
             
+
+        # It has to be list(perm), not just perm! To actually make a copy that will be modified by the algorithm
         SA = SymmetryAproximator(list(perm), a, b, fp, division_constant=division_constant, probability_constant=probability_constant)
         SA.Tmax = temp
         SA.Tmin = 0.01

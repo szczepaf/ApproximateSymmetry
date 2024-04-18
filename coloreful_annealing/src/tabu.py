@@ -14,6 +14,12 @@ class SymmetryAproximator(Annealer):
         self.A = self.B = A
         if B is not None:
             self.B = B
+                
+        # initialize a set of visited permutations
+        self.visited = set()
+        self.rejected = 0
+        
+
         self.iNeighbor, self.dNeighbor = [], [set() for _ in range(self.N)]
         for i in range(self.N):
             neigh = set()
@@ -104,8 +110,18 @@ class SymmetryAproximator(Annealer):
         
 
     def move(self):
+        # With tabu measures
         a = random.randint(0, len(self.state) - 1)
         b = random.randint(0, len(self.state) - 1)
+        
+        # check whether the new permutation that would emerge by swapping a and b is already visited
+        new_state = self.copy_state(self.state)
+        new_state[a], new_state[b] = new_state[b], new_state[a]
+        if tuple(new_state) in self.visited:
+            self.rejected += 1
+            return 0, a, b
+        
+        self.visited.add(tuple(new_state))
         
         if self.check_fp(a,b):
             # compute initial energy
@@ -212,7 +228,7 @@ def check(perm):
             return True
     return False
 
-def annealing(a, b=None, temp=1, temp_min = 0.01, steps=30000, runs=1, fp=float(math.inf)):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf)):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -222,17 +238,18 @@ def annealing(a, b=None, temp=1, temp_min = 0.01, steps=30000, runs=1, fp=float(
             perm = np.random.permutation(N)
         SA = SymmetryAproximator(list(perm), a, b, fp)
         SA.Tmax = temp
-        SA.Tmin = temp_min
+        SA.Tmin = 0.01
         SA.steps = steps
         SA.copy_strategy = 'slice'
-        state, _ = SA.anneal()
-        
+        state, e = SA.anneal()
         fps_in_best_state = count_fp(state)
+        e = SA.energy()
+        e = 4 * e / (( N * ( N - 1 )) - fps_in_best_state * (fps_in_best_state - 1))
         
-        e = 4 * SA.energy() / (( N * ( N - 1 )) - (fps_in_best_state * (fps_in_best_state - 1)))
         if best_energy == None or e < best_energy:
             best_state, best_energy = state, e
             
+    print("rejections: ", SA.rejected)
     return best_state, best_energy 
 
 

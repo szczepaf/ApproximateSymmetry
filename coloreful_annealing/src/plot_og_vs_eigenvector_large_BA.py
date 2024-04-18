@@ -4,21 +4,18 @@ import seaborn as sns
 from scipy.stats import ttest_rel
 import numpy as np
 
-
-def prepare_plot_data(df, vertex_count):
+def prepare_plot_data(df, vertex_count, k):
     plot_data = {'k': [], 'Energy (S(A))': [], 'Algorithm': []}
     
-    filtered_df = df[df['vertex_count'] == vertex_count]
-    k_values = [3, 5, 7] 
-    algorithms = ['eigenvector', 'half']
+    filtered_df = df[(df['vertex_count'] == vertex_count) & (df['k'] == k)]
+    algorithms = ['eigenvector', 'og']
     
-    for k in k_values:
-        for algorithm in algorithms:
-            energy_column = f'{algorithm}_energy'
-            for energy in filtered_df[filtered_df['k'] == k][energy_column]:
-                plot_data['k'].append(f'{k}')
-                plot_data['Energy (S(A))'].append(energy)
-                plot_data['Algorithm'].append(f'{algorithm.capitalize()} SA')
+    for algorithm in algorithms:
+        energy_column = f'{algorithm}_energy'
+        for energy in filtered_df[energy_column]:
+            plot_data['k'].append(f'{k}')
+            plot_data['Energy (S(A))'].append(energy)
+            plot_data['Algorithm'].append(f'{algorithm.capitalize()} SA')
                 
     return pd.DataFrame(plot_data)
 
@@ -31,7 +28,7 @@ def plot_violin(df_plot, title):
     plt.legend(title='Algorithm')
     plt.tight_layout()
     plt.show()
-    
+
 def cohens_d(group1, group2):
     s1, s2 = np.std(group1, ddof=1), np.std(group2, ddof=1)
     pooled_std = np.sqrt((s1 ** 2 + s2 ** 2) / 2)
@@ -40,16 +37,16 @@ def cohens_d(group1, group2):
     return d
 
 def main():
-    df_BA = pd.read_csv('comparisons/comparison_of_original_and_eigenvector_twostep_BA.csv')
-    vertex_counts = [50, 100, 150]
+    df_BA = pd.read_csv('comparisons/comparisons_of_eigenvector_vs_og_on_large_BA.csv')
+    vertex_counts = [300, 500]
+    k_values = [10, 15, 20]
 
     for vertex_count in vertex_counts:
-        plot_df = prepare_plot_data(df_BA, vertex_count)
-        plot_violin(plot_df, f'BA Graphs with {vertex_count} Vertices')
-        
-    # Calculate p-values and Cohen's D for Zero SA vs. New SA and New SA vs. Half SA
-    k_values = [3, 5, 7]
-    comparisons = [('half', 'eigenvector')]
+        for k in k_values:
+            plot_df = prepare_plot_data(df_BA, vertex_count, k)
+            plot_violin(plot_df, f'BA Graphs with {vertex_count} Vertices, k={k}')
+
+    comparisons = [('og', 'eigenvector')]
     for comparison in comparisons:
         p_values_df = pd.DataFrame(index=vertex_counts, columns=[f'{k}' for k in k_values])
         cohens_d_df = pd.DataFrame(index=vertex_counts, columns=[f'{k}' for k in k_values])
@@ -76,8 +73,6 @@ def main():
         plt.xlabel('k')
         plt.ylabel('# Nodes')
         plt.show()
-
-    
 
 if __name__ == "__main__":
     main()

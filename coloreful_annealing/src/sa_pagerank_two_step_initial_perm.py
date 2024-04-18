@@ -20,7 +20,7 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 10):
+    def __init__(self, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 1, state=None):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
@@ -40,6 +40,11 @@ class SymmetryAproximator(Annealer):
         # compute the similarity matrix. If two vertices have similar degree, they will have a higher value in this matrix
         self.similarity_matrix = self.compute_similarity_matrix(self.A, division_constant=self.division_constant)
         
+        if (state is None):
+            self.state = list(self.generate_initial_permutation())
+        else:
+            self.state = list(state)
+         
         
         for i, s in enumerate(state):
             neigh = []
@@ -105,8 +110,8 @@ class SymmetryAproximator(Annealer):
                 E += dE
             trials += 1
             
-            # Work with the new definition of Symmetry taking into account the number of fixed points. 
-            E = E * (self.N * (self.N - 1) - self.lfp * (self.lfp - 1)) / (self.N * (self.N - 1) - self.fp * (self.fp - 1))
+            # DO NOT Work with the new definition of Symmetry taking into account the number of fixed points. 
+            #E = E * (self.N * (self.N - 1) - self.lfp * (self.lfp - 1)) / (self.N * (self.N - 1) - self.fp * (self.fp - 1))
             
             if dE > 0.0 and math.exp(-dE / T) < random.random():
                 # Restore previous state
@@ -139,22 +144,26 @@ class SymmetryAproximator(Annealer):
         # Return best state and energy
         return self.best_state, self.best_energy
     
+
     def compute_similarity_matrix(self, A, division_constant):
-        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on the degree distribution of the graph
+        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on eigenvector centrality of the graph
         In practice, the output can be any similarity matrix here."""
         
-        # sum over columns of the adjacency matrix - get the degree distribution
-        degree_distribution = sum(A,0)
+        G = nx.from_numpy_array(A)
+        eigenvector_centrality = nx.pagerank(G, max_iter=1000) # 100 iterations might not be sufficient
+        n = len(eigenvector_centrality)
+        diff_matrix = np.zeros((n, n))
         
-        # compute a matrix where position (i,j) is the absolute difference between the degree of node i and node j
-        dist_nodes_matrix = np.abs(degree_distribution - degree_distribution.reshape(-1,1))
+        # Fill the difference matrix with absolute differences of centralities
+        for i in range(n):
+            for j in range(n):
+                diff_matrix[i, j] = abs(eigenvector_centrality[i] - eigenvector_centrality[j])
         
         # compute the inverse of the distance matrix - create a form of similariy measure.
         # Add a constant to avoid division by zero. The higher the constant, the more even the choices will be
-        dist_nodes_matrix_inv = 1./(division_constant + dist_nodes_matrix)
+        similarity_matrix = 1./(division_constant + diff_matrix)
         
-
-        return dist_nodes_matrix_inv
+        return similarity_matrix
         
 
     # compute 1/4 ||A - pAp^T|| for given p, A
@@ -212,13 +221,43 @@ class SymmetryAproximator(Annealer):
             temp += 1
         if self.state[b] == a:
             temp += 1
-        #if temp > self.mfp: will not happen in new S(A) definition
-        #    return False 
+        if temp > self.mfp: 
+            return False 
         self.lfp = self.fp
         self.fp = temp
         return True
-  
+    
+    def generate_initial_permutation(self):
+        perm = np.zeros(self.N)
+        perm = perm.astype(int)
+        chosen = set()
+        for i in range(self.N):
+            # take the column of similarity matrix corresponding to vertex i
+            sim_col = np.array(self.similarity_matrix[:, i])
+            # do not choose the vertex itself. For all already chosen vertices, set the similarity to 0
+            sim_col[i] = 0
+            for j in chosen:
+                sim_col[j] = 0
+    
+            # Ensure there's at least one selectable option
+            if sum(sim_col) == 0:
+                # Handle the zero sum case, e.g., by choosing randomly from the remaining vertices
+                remaining_choices = [x for x in range(self.N) if x not in chosen and x != i]
+                if remaining_choices:
+                    chosen_vertex = np.random.choice(remaining_choices)
+                else:
+                    # Handle case where no valid choice exists (shouldn't happen if logic is correct)
+                    continue
+            else:
+                # Choose vertex with probability proportional to its similarity to i
+                chosen_vertex = np.random.choice(list(range(self.N)), p=sim_col/sum(sim_col))
+
+            perm[i] = chosen_vertex
+            # Add the chosen vertex to the set of chosen vertices
+            chosen.add(chosen_vertex)
+
             
+        return perm
         
 
     def move(self):
@@ -282,26 +321,25 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=10, probability_constant=0.01):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=0.2, probability_constant=0.01, state=None):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
-        perm = np.random.permutation(N)
-        while check(perm):
-            perm = np.random.permutation(N)
             
-        SA = SymmetryAproximator(list(perm), a, b, fp, division_constant=division_constant, probability_constant=probability_constant)
+        SA = SymmetryAproximator(a, b, fp, division_constant=division_constant, probability_constant=probability_constant, state=state)
         SA.Tmax = temp
         SA.Tmin = 0.01
         SA.steps = steps
         SA.copy_strategy = 'slice'
-        state, _ = SA.anneal()
+        final_state, e = SA.anneal()
         
-        fps_in_best_state = count_fp(state)
+        fps_in_best_state = count_fp(final_state)
+
         
-        e = 4 * SA.energy() / (( N * ( N - 1 )) - (fps_in_best_state * (fps_in_best_state - 1)))
+        e = 4 * e / ( N * ( N - 1 ))
+
         if best_energy == None or e < best_energy:
-            best_state, best_energy = state, e
+            best_state, best_energy = final_state, e
             
     return best_state, best_energy 
 
@@ -314,3 +352,5 @@ def count_fp(perm):
         if i == v:
             count += 1
     return count
+
+

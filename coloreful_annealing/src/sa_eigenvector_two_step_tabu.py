@@ -3,7 +3,6 @@
 # pylint: disable=C0103 # UPPER case
 
 
-from importlib.metadata import packages_distributions
 import math
 import random, numpy as np
 from typing_extensions import override
@@ -20,7 +19,7 @@ def count_fp(perm):
     return count
 
 class SymmetryAproximator(Annealer):
-    def __init__(self, state, A, B, mfp=float(math.inf), probability_constant = 0.01, division_constant = 10):
+    def __init__(self, state, A, B, mfp, probability_constant = 0.1, division_constant = 0.1):
         """state - initial permutation, A - adjacency matrix of a graph, B - in this case just A, mfp - maximum fixed points, probability_constant, division_constant - constants used when working with similarities"""
         self.N, self.mfp, self.lfp, self.fp = A.shape[0], mfp, 0, 0
         self.A = self.B = A
@@ -28,6 +27,11 @@ class SymmetryAproximator(Annealer):
         self.probability_constant = probability_constant
         if B is not None:
             self.B = B
+            
+        # initialize a set of visited permutations
+        self.visited = set()
+        self.rejected = 0
+        
         self.iNeighbor, self.dNeighbor = [], [set() for _ in range(self.N)]
         for i in range(self.N):
             neigh = set()
@@ -105,6 +109,9 @@ class SymmetryAproximator(Annealer):
                 E += dE
             trials += 1
             
+            
+            
+
             # Work with the new definition of Symmetry taking into account the number of fixed points. 
             E = E * (self.N * (self.N - 1) - self.lfp * (self.lfp - 1)) / (self.N * (self.N - 1) - self.fp * (self.fp - 1))
             
@@ -139,22 +146,26 @@ class SymmetryAproximator(Annealer):
         # Return best state and energy
         return self.best_state, self.best_energy
     
+
     def compute_similarity_matrix(self, A, division_constant):
-        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on the degree distribution of the graph
+        """Input: A - adjacency matrix of a graph. Output: a similarity matrix based on eigenvector centrality of the graph
         In practice, the output can be any similarity matrix here."""
         
-        # sum over columns of the adjacency matrix - get the degree distribution
-        degree_distribution = sum(A,0)
+        G = nx.from_numpy_array(A)
+        eigenvector_centrality = nx.eigenvector_centrality(G, max_iter=1000) # 100 iterations might not be sufficient
+        n = len(eigenvector_centrality)
+        diff_matrix = np.zeros((n, n))
         
-        # compute a matrix where position (i,j) is the absolute difference between the degree of node i and node j
-        dist_nodes_matrix = np.abs(degree_distribution - degree_distribution.reshape(-1,1))
+        # Fill the difference matrix with absolute differences of centralities
+        for i in range(n):
+            for j in range(n):
+                diff_matrix[i, j] = abs(eigenvector_centrality[i] - eigenvector_centrality[j])
         
         # compute the inverse of the distance matrix - create a form of similariy measure.
         # Add a constant to avoid division by zero. The higher the constant, the more even the choices will be
-        dist_nodes_matrix_inv = 1./(division_constant + dist_nodes_matrix)
+        similarity_matrix = 1./(division_constant + diff_matrix)
         
-
-        return dist_nodes_matrix_inv
+        return similarity_matrix
         
 
     # compute 1/4 ||A - pAp^T|| for given p, A
@@ -166,6 +177,7 @@ class SymmetryAproximator(Annealer):
             v = self.state[r]
             for c in range(m):
                 diff += abs(B[v,c] - self.A[r,c])
+                
         return diff/ 4
     
 
@@ -218,7 +230,6 @@ class SymmetryAproximator(Annealer):
         self.fp = temp
         return True
   
-            
         
 
     def move(self):
@@ -237,7 +248,7 @@ class SymmetryAproximator(Annealer):
         for b in range(len(self.state)):
             image_b = self.state[b]
 
-            # if the swap would create a fixed point, let the energy difference be 0 (it will be normalized later)
+            # if the swap would create a fixed point, let the energy difference stay at 0 (it will be normalized later)
             if (not (a == image_b or b == image_a or a == b)):
                 sim_b = self.similarity_matrix.item(b,image_b) # similarity of b -> image of b
             
@@ -257,6 +268,15 @@ class SymmetryAproximator(Annealer):
         
         # Choose b based on energy differences as probability distribution
         b = np.random.choice(range(len(self.state)), p = energy_diffs_probs)
+        
+        # check whether the new permutation that would emerge by swapping a and b is already visited
+        new_state = self.copy_state(self.state)
+        new_state[a], new_state[b] = new_state[b], new_state[a]
+        if tuple(new_state) in self.visited:
+            self.rejected += 1
+            return 0, a, b
+        
+        self.visited.add(tuple(new_state))
             
         if self.check_fp(a,b):
             ida, idb = self.state[a], self.state[b]
@@ -282,7 +302,7 @@ def check(perm):
     return False
 
 
-def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=10, probability_constant=0.01):
+def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), division_constant=0.1, probability_constant=0.1):
     best_state, best_energy = None, None
     N = len(a)
     for _ in range(runs): 
@@ -295,22 +315,18 @@ def annealing(a, b=None, temp=1, steps=30000, runs=1, fp=float(math.inf), divisi
         SA.Tmin = 0.01
         SA.steps = steps
         SA.copy_strategy = 'slice'
-        state, _ = SA.anneal()
+        state, e = SA.anneal()
         
         fps_in_best_state = count_fp(state)
+
         
-        e = 4 * SA.energy() / (( N * ( N - 1 )) - (fps_in_best_state * (fps_in_best_state - 1)))
+        e = 4 * e / (( N * ( N - 1 )) -  fps_in_best_state * (fps_in_best_state - 1))
+
         if best_energy == None or e < best_energy:
             best_state, best_energy = state, e
-            
+    
+    print("rejections: ", SA.rejected)
     return best_state, best_energy 
 
 
 
-
-def count_fp(perm):
-    count = 0
-    for i, v in enumerate(perm):
-        if i == v:
-            count += 1
-    return count

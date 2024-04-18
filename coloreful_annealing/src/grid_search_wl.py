@@ -1,5 +1,5 @@
 import networkx as nx
-import sa_degree_twostep as sa_improved # import the given algorithm that we want to test
+import sa_wl as sa_improved # import the given algorithm that we want to test
 import datetime
 import csv
 import ast
@@ -57,14 +57,14 @@ def get_stochastic_block_model_graphs(simulation_count = 30, sizes = [60, 120], 
                 graphs.append((graph, block_count, "SBM"))
     return graphs
 
-def run_simulation_on_parameters(graph_tuples, steps, division_constant, probability_constant, filename, alg_type):
+def run_simulation_on_parameters(graph_tuples, steps, iterations, probability_constant, filename, alg_type):
     for graph_tuple in graph_tuples:
         print("Processing graph: ", graph_tuples.index(graph_tuple) + 1, " out of ", len(graph_tuples), " (in current epoch)." )
         graph = graph_tuple[0]
         parameter = graph_tuple[1]
         graph_type = graph_tuple[2]
         
-        perm, S = sa_improved.annealing(nx.to_numpy_array(graph), steps=steps, probability_constant=probability_constant, division_constant=division_constant)
+        perm, S = sa_improved.annealing(nx.to_numpy_array(graph), steps=steps, probability_constant=probability_constant, iterations=iterations)
 
         vertex_count = graph.number_of_nodes()
         
@@ -74,7 +74,7 @@ def run_simulation_on_parameters(graph_tuples, steps, division_constant, probabi
                 fp += 1
                 
         
-        row = [alg_type, graph_type, vertex_count, parameter, steps, division_constant, probability_constant, S, fp]
+        row = [alg_type, graph_type, vertex_count, parameter, steps, iterations, probability_constant, S, fp]
         
         with open(filename, mode='a', newline='') as file:
             writer = csv.writer(file)
@@ -99,11 +99,12 @@ def load_graphs_from_csv(filename):
 
 def main():
     date = datetime.datetime.now().strftime("%Y-%m-%d-%H")
-    algorithm_type = "degree_twostep"
+    algorithm_type = "wl"
     steps = 20000
     
-    division_constants = [0.01, 0.1, 0.2, 1, 10]
-    probability_constants = [0.001, 0.01, 0.2, 0.1, 1]
+    
+    iterations = [1, 2, 3]
+    probability_constants = [0.3, 0.6, 0.9]
 
     
 
@@ -112,17 +113,17 @@ def main():
     
     #write header row
     with open(file_name, "w") as f:
-        f.write("alg_type,graph_type,vertex_count,parameter,steps,division_constant,probability_constant,energy,fps\n")
+        f.write("alg_type,graph_type,vertex_count,parameter,steps,iterations,probability_constant,energy,fps\n")
      
 
     
-    i, total_epochs = 0, len(division_constants) * len(probability_constants)
+    i, total_epochs = 0, len(iterations) * len(probability_constants)
 
-    for division_constant in division_constants:
+    for iteration in iterations:
         for probability_constant in probability_constants:
             print("Epoch: ", i + 1, " out of ", total_epochs)
             i += 1
-            run_simulation_on_parameters(graph_tuples, steps, division_constant, probability_constant, file_name, algorithm_type)
+            run_simulation_on_parameters(graph_tuples, steps, iteration, probability_constant, file_name, algorithm_type)
     
     print("Finished.")   
 
